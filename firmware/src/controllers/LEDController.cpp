@@ -2,8 +2,11 @@
 #include "Config.h"
 
 LEDController::LEDController()
-    : ring_(Config::LED_COUNT, Config::PIN_LED_DATA,
-            NEO_GRB + NEO_KHZ800) {}
+    : ring_(Config::LED_COUNT, Config::PIN_LED_DATA, NEO_GRB + NEO_KHZ800)
+#if defined(PIN_NEOPIXEL)
+    , onboardLed_(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800)
+#endif
+    {}
 
 void LEDController::fillAll(unsigned long color) {
   for (int i = 0; i < ring_.numPixels(); i++) {
@@ -19,6 +22,14 @@ unsigned long LEDController::toNeoColor(unsigned long color) {
 }
 
 void LEDController::begin() {
+#if defined(PIN_NEOPIXEL)
+  // The XIAO RP2350 replaced discrete R/G/B on-board LEDs with a single
+  // WS2812. Framework GPIO init can send garbage data to it; silence it first.
+  onboardLed_.begin();
+  onboardLed_.setPixelColor(0, 0);
+  onboardLed_.show();
+#endif
+
   pinMode(Config::PIN_LED_LS, OUTPUT);
   digitalWrite(Config::PIN_LED_LS, LOW);
 

@@ -6,7 +6,7 @@ namespace Config {
 
 const bool ENABLE_TELEMETRY = true;
 
-// Hardware pins (XIAO RP2040)
+// Hardware pins (XIAO RP2350)
 const int PIN_RIGHT_BTN = D0;
 const int PIN_LEFT_BTN = D2;
 const int PIN_LED_DATA = D3;

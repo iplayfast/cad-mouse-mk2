@@ -29,4 +29,7 @@ class LEDController {
   int spinnerIndex_ = 0;
   unsigned long lastSpinnerStepMs_ = 0;
   Adafruit_NeoPixel ring_;
+#if defined(PIN_NEOPIXEL)
+  Adafruit_NeoPixel onboardLed_;
+#endif
 };
