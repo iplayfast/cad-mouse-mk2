@@ -64,6 +64,6 @@ python3 calibrate.py \
 
 echo ""
 echo "========================================"
-echo "  firmware/include/Config.h updated."
+echo "  firmware/include/Calibration.h updated."
 echo "  Reflash the firmware to apply the new calibration."
 echo "========================================"
