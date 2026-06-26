@@ -61,6 +61,7 @@ void LEDController::startSpinner(unsigned long color) {
   mode_ = Mode::Spinner;
   color_ = toNeoColor(color);
   spinnerIndex_ = 0;
+  spinnerStarted_ = false;
   lastSpinnerStepMs_ = 0;
   setPower(true);
 }
@@ -71,9 +72,10 @@ void LEDController::updateSpinner() {
   }
 
   const unsigned long now = millis();
-  if (lastSpinnerStepMs_ != 0 && (now - lastSpinnerStepMs_) < 60) {
+  if (spinnerStarted_ && (now - lastSpinnerStepMs_) < 60) {
     return;
   }
+  spinnerStarted_ = true;
   lastSpinnerStepMs_ = now;
 
   fillAll(0);

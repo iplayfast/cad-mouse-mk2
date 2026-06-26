@@ -24,6 +24,7 @@ class InputController {
 
   bool calibrationRequested_ = false;
   bool hadActivity_ = false;
+  bool bothHeldActive_ = false;
   unsigned long bothHeldStartMs_ = 0;
   bool calibrationHoldFired_ = false;
   bool leftPressed_ = false;

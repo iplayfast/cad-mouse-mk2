@@ -25,6 +25,7 @@ void InputController::begin() {
   instance_ = this;
   calibrationRequested_ = false;
   hadActivity_ = false;
+  bothHeldActive_ = false;
   bothHeldStartMs_ = 0;
   calibrationHoldFired_ = false;
   leftPressed_ = false;
@@ -37,12 +38,14 @@ void InputController::update() {
   rightBtn_.check();
 
   if (!areBothPressed()) {
+    bothHeldActive_ = false;
     bothHeldStartMs_ = 0;
     calibrationHoldFired_ = false;
     return;
   }
 
-  if (bothHeldStartMs_ == 0) {
+  if (!bothHeldActive_) {
+    bothHeldActive_ = true;
     bothHeldStartMs_ = now;
     return;
   }

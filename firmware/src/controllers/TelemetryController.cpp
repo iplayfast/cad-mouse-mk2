@@ -10,8 +10,13 @@ void TelemetryController::begin() { tick_ = 0; }
 
 bool TelemetryController::enabled() const { return Config::ENABLE_TELEMETRY; }
 
-void TelemetryController::publish(const float delta[9], const float motion[6],
-                                  int buttonBits, bool hidReportSent) {
+void TelemetryController::publish(const float raw[9], const float baseline[9],
+                                  const float motion[6], int buttonBits,
+                                  bool hidReportSent) {
+  float delta[9];
+  for (int i = 0; i < 9; i++) {
+    delta[i] = raw[i] - baseline[i];
+  }
   if (!enabled()) {
     return;
   }

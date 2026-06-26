@@ -4,7 +4,7 @@
 
 namespace Config {
 
-const bool ENABLE_TELEMETRY = true;
+const bool ENABLE_TELEMETRY = false;
 
 // Hardware pins (XIAO RP2350)
 const int PIN_RIGHT_BTN = D0;
@@ -17,11 +17,6 @@ const int PIN_MAG3_LS = D8;
 
 // Samples for calibration offset
 const int ZERO_SAMPLES = 200;
-
-// Gains and sign fixes
-const float GAIN_T[3] = {28.0, 28.0, 24.0};
-const float GAIN_R[3] = {18.0, 18.0, 20.0};
-const int SIGN_AXIS[6] = {-1, +1, -1, +1, +1, +1};
 
 // Dead zones
 const float DEAD_T = 16.0;

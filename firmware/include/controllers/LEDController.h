@@ -27,6 +27,7 @@ class LEDController {
   Mode mode_ = Mode::Off;
   unsigned long color_ = 0;
   int spinnerIndex_ = 0;
+  bool spinnerStarted_ = false;
   unsigned long lastSpinnerStepMs_ = 0;
   Adafruit_NeoPixel ring_;
 #if defined(PIN_NEOPIXEL)

@@ -41,10 +41,6 @@ float MotionController::clampf(float v, float lo, float hi) {
   return v;
 }
 
-float MotionController::hardZero(float v, float thr) {
-  return (fabs(v) < thr) ? 0.0 : v;
-}
-
 float MotionController::lowpass(float prev, float x, float dt, float tau) {
   if (tau <= 0.0) return x;
   const float a = dt / (tau + dt);
@@ -91,9 +87,7 @@ void MotionController::compute(const float raw[9], const float* baseline, float 
       filt_[i] = lowpass(filt_[i], y[i], dt, Config::SMOOTH_TAU_S);
     }
 
-    const float limited =
-        clampf(filt_[i], -Config::AXIS_LIMIT, Config::AXIS_LIMIT);
-    out[i] = hardZero(limited, dead);
+    out[i] = clampf(filt_[i], -Config::AXIS_LIMIT, Config::AXIS_LIMIT);
     if (out[i] != 0.0) {
       motionActive_ = true;
     }
