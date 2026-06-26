@@ -20,10 +20,15 @@ Keep movements slow to avoid hitting the ±350 output clamp.
 """
 
 import os
+import struct
 import sys
 import numpy as np
 
 DOF_NAMES = ['TX', 'TY', 'TZ', 'RX', 'RY', 'RZ']
+
+VID = 0x2886
+PID = 0x0058
+OUTPUT_REPORT_ID = 5
 
 SENSOR_COLS = slice(1, 10)   # s0x .. s2z
 MOTION_COLS = slice(10, 16)  # X .. Rz
@@ -106,6 +111,53 @@ def print_crosstalk_table(labeled_logs, M):
     print()
 
 
+def find_hidraw(vid, pid):
+    base = "/sys/bus/hid/devices"
+    try:
+        entries = os.listdir(base)
+    except FileNotFoundError:
+        return None
+    for entry in entries:
+        parts = entry.split(":")
+        if len(parts) < 3:
+            continue
+        try:
+            e_vid = int(parts[1], 16)
+            e_pid = int(parts[2].split(".")[0], 16)
+        except ValueError:
+            continue
+        if e_vid != vid or e_pid != pid:
+            continue
+        hidraw_dir = os.path.join(base, entry, "hidraw")
+        try:
+            nodes = os.listdir(hidraw_dir)
+        except FileNotFoundError:
+            continue
+        for node in nodes:
+            return f"/dev/{node}"
+    return None
+
+
+def send_matrix_to_device(M):
+    hidraw_path = find_hidraw(VID, PID)
+    if not hidraw_path:
+        print("  WARNING: Device not found — matrix not sent to device.")
+        print("  Calibration.h was updated; reflash to apply it.")
+        return
+    flat = M.flatten().tolist()
+    data = struct.pack("<B54f", OUTPUT_REPORT_ID, *flat)
+    try:
+        fd = os.open(hidraw_path, os.O_RDWR)
+        os.write(fd, data)
+        os.close(fd)
+        print(f"  Calibration matrix sent to device ({hidraw_path}).")
+        print("  The device will use it immediately and has saved it to flash.")
+    except PermissionError:
+        print(f"  WARNING: Cannot open {hidraw_path} — check udev rules.")
+    except OSError as e:
+        print(f"  WARNING: Failed to send matrix: {e}")
+
+
 def write_calibration_h(M):
     rows = []
     for i, (row, dof) in enumerate(zip(M, DOF_NAMES)):
@@ -168,7 +220,8 @@ def main():
     M = fit_matrix(labeled_logs)
     print_crosstalk_table(labeled_logs, M)
     write_calibration_h(M)
-    print("\nNext step: reflash the firmware.")
+    send_matrix_to_device(M)
+    print("\nCalibration complete. The device is using the new matrix immediately.")
 
 
 if __name__ == '__main__':

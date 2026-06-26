@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <math.h>
+#include <string.h>
 
 #include "Config.h"
 
@@ -33,6 +34,11 @@ void MotionController::reset() {
     filt_[i] = 0.0;
   }
   motionActive_ = false;
+}
+
+void MotionController::setDecouplingMatrix(const float matrix[6][9]) {
+  memcpy(customMatrix_, matrix, sizeof(customMatrix_));
+  hasCustomMatrix_ = true;
 }
 
 float MotionController::clampf(float v, float lo, float hi) {
@@ -69,10 +75,11 @@ void MotionController::compute(const float raw[9], const float* baseline, float 
     mag2x, mag2y, mag2z,
     mag3x, mag3y, mag3z,
   };
+  const float (*M)[9] = hasCustomMatrix_ ? customMatrix_ : Config::DECOUPLING_M;
   float y[6] = {};
   for (int i = 0; i < 6; i++) {
     for (int j = 0; j < 9; j++) {
-      y[i] += Config::DECOUPLING_M[i][j] * delta[j];
+      y[i] += M[i][j] * delta[j];
     }
   }
 

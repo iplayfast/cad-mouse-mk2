@@ -1,52 +1,98 @@
 #!/usr/bin/env python3
 """
-Monitor serial telemetry from the CAD Mouse and display live + aggregate values.
+Monitor CAD Mouse sensor deltas and motion output via HID feature report.
+No serial port or special firmware build required.
 
 Usage:
-  python3 monitor.py [PORT] [BAUD]
+  python3 monitor.py [HIDRAW_PATH]
 
-Defaults: PORT=/dev/ttyACM0, BAUD=115200
+If HIDRAW_PATH is omitted, the device is discovered automatically.
 
 Keys:
-  r  - reset aggregate accumulator
+  r  - reset aggregate accumulator and log file
   q  - quit
 """
 
+import fcntl
 import os
-import sys
 import select
+import struct
+import sys
 import termios
-import tty
-import re
-import serial
 import time
+import tty
 
-PORT = sys.argv[1] if len(sys.argv) > 1 else "/dev/ttyACM0"
-BAUD = int(sys.argv[2]) if len(sys.argv) > 2 else 115200
-LOG_FILE = "mouse_monitor.log"
-
-
-def open_log():
-    f = open(LOG_FILE, "w", buffering=1)
-    f.write(LOG_HEADER)
-    return f
-
-
-def reset_log():
-    try:
-        os.remove(LOG_FILE)
-    except FileNotFoundError:
-        pass
-    return open_log()
+VID = 0x2886
+PID = 0x0058
 
 AXES = ["X", "Y", "Z", "Rx", "Ry", "Rz"]
 SENSOR_KEYS = ["s0x", "s0y", "s0z", "s1x", "s1y", "s1z", "s2x", "s2y", "s2z"]
 LOG_KEYS = SENSOR_KEYS + AXES
 LOG_HEADER = "sample\t" + "\t".join(LOG_KEYS) + "\n"
-PATTERN = re.compile(r"^>([A-Za-z0-9]+):(-?[\d.]+(?:e[+-]?\d+)?)$")
+LOG_FILE = "mouse_monitor.log"
 
-BAR_HALF = 20          # chars on each side of the centre pip
-BAR_COLS = BAR_HALF * 2 + 3  # [ + left + | + right + ]
+# HIDIOCGFEATURE(len) = _IOWR('H', 0x07, len)
+def HIDIOCGFEATURE(length):
+    return (3 << 30) | (ord('H') << 8) | 0x07 | (length << 16)
+
+FEATURE_REPORT_ID = 4
+FEATURE_BUF_SIZE  = 1 + 36  # report_id byte + 9 floats
+
+
+def find_hidraw(vid, pid):
+    """Walk sysfs to find /dev/hidrawN for the given VID:PID."""
+    base = "/sys/bus/hid/devices"
+    try:
+        entries = os.listdir(base)
+    except FileNotFoundError:
+        return None
+    for entry in entries:
+        # Entry format: 0003:VID:PID.NNNN
+        parts = entry.split(":")
+        if len(parts) < 3:
+            continue
+        try:
+            e_vid = int(parts[1], 16)
+            e_pid = int(parts[2].split(".")[0], 16)
+        except ValueError:
+            continue
+        if e_vid != vid or e_pid != pid:
+            continue
+        hidraw_dir = os.path.join(base, entry, "hidraw")
+        try:
+            nodes = os.listdir(hidraw_dir)
+        except FileNotFoundError:
+            continue
+        for node in nodes:
+            return f"/dev/{node}"
+    return None
+
+
+def poll_sensor_delta(fd):
+    """Read feature report ID 4 and return 9 floats (sensor deltas)."""
+    buf = bytearray(FEATURE_BUF_SIZE)
+    buf[0] = FEATURE_REPORT_ID
+    fcntl.ioctl(fd, HIDIOCGFEATURE(FEATURE_BUF_SIZE), buf, True)
+    return struct.unpack_from("<9f", buf, 1)
+
+
+def read_axes_nonblocking(fd, current_axes):
+    """Read any pending input reports; return updated motion axes or current."""
+    r, _, _ = select.select([fd], [], [], 0)
+    if not r:
+        return current_axes
+    try:
+        data = os.read(fd, 64)
+    except BlockingIOError:
+        return current_axes
+    if data and data[0] == 1 and len(data) >= 13:
+        vals = struct.unpack_from("<6h", data, 1)
+        return [float(v) for v in vals]
+    return current_axes
+
+
+BAR_HALF = 20
+BAR_COLS = BAR_HALF * 2 + 3
 
 
 def make_bar(val, limit=350):
@@ -62,43 +108,68 @@ def make_bar(val, limit=350):
 
 
 def render(live, aggregate, sample_count):
-    lines = []
-    lines.append("\033[H\033[2J")
-    lines.append(f"  CAD Mouse Monitor  (samples: {sample_count})  [r=reset  q=quit]")
-    lines.append("")
-    lines.append(f"  {'Axis':<4}  {'Live':>8}  {'Bar (live)':{BAR_COLS}}  {'Aggregate':>12}")
-    lines.append(f"  {'-'*4}  {'-'*8}  {'-'*BAR_COLS}  {'-'*12}")
+    lines = [
+        "\033[H\033[2J",
+        f"  CAD Mouse Monitor  (samples: {sample_count})  [r=reset  q=quit]",
+        "",
+        f"  {'Axis':<4}  {'Live':>8}  {'Bar (live)':{BAR_COLS}}  {'Aggregate':>12}",
+        f"  {'-'*4}  {'-'*8}  {'-'*BAR_COLS}  {'-'*12}",
+    ]
     for ax in AXES:
         lv = live.get(ax, 0.0)
         ag = aggregate.get(ax, 0.0)
-        bar = make_bar(lv)
-        lines.append(f"  {ax:<4}  {lv:>8.2f}  {bar}  {ag:>12.1f}")
+        lines.append(f"  {ax:<4}  {lv:>8.2f}  {make_bar(lv)}  {ag:>12.1f}")
     lines.append("")
     return "\r\n".join(lines)
 
 
-def main():
+def open_log():
+    f = open(LOG_FILE, "w", buffering=1)
+    f.write(LOG_HEADER)
+    return f
+
+
+def reset_log():
     try:
-        ser = serial.Serial(PORT, BAUD, timeout=0.1)
-    except serial.SerialException as e:
-        print(f"Error opening {PORT}: {e}")
+        os.remove(LOG_FILE)
+    except FileNotFoundError:
+        pass
+    return open_log()
+
+
+def main():
+    if len(sys.argv) > 1:
+        hidraw_path = sys.argv[1]
+    else:
+        hidraw_path = find_hidraw(VID, PID)
+        if not hidraw_path:
+            print(f"ERROR: CAD Mouse ({VID:04x}:{PID:04x}) not found. Is it plugged in?")
+            sys.exit(1)
+
+    print(f"Using {hidraw_path}")
+
+    try:
+        fd = os.open(hidraw_path, os.O_RDWR | os.O_NONBLOCK)
+    except PermissionError:
+        print(f"ERROR: Cannot open {hidraw_path}. Check udev rules or run with sudo.")
         sys.exit(1)
 
     live = {k: 0.0 for k in LOG_KEYS}
     aggregate = {ax: 0.0 for ax in AXES}
     sample_count = 0
+    current_axes = [0.0] * 6
     log = open_log()
 
-    # Put stdin in raw mode so we can read single keypresses
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-    tty.setraw(fd)
+    stdin_fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(stdin_fd)
+    tty.setraw(stdin_fd)
 
     try:
         print(render(live, aggregate, sample_count), end="", flush=True)
-        buf = b""
+        last_poll = time.monotonic()
+
         while True:
-            # Check for keypress
+            # Keyboard
             if select.select([sys.stdin], [], [], 0)[0]:
                 ch = sys.stdin.read(1)
                 if ch in ("q", "Q", "\x03"):
@@ -109,37 +180,40 @@ def main():
                     log.close()
                     log = reset_log()
 
-            # Read serial data
-            chunk = ser.read(256)
-            if chunk:
-                buf += chunk
-                while b"\n" in buf:
-                    line, buf = buf.split(b"\n", 1)
-                    text = line.decode("utf-8", errors="ignore").strip()
-                    m = PATTERN.match(text)
-                    if m:
-                        key, val_str = m.group(1), m.group(2)
-                        if key in live:
-                            val = float(val_str)
-                            live[key] = val
-                            if key in AXES:
-                                aggregate[key] += val
-                            if key == "Rz":
-                                sample_count += 1
-                                log.write(
-                                    f"{sample_count}\t"
-                                    + "\t".join(f"{live[k]:.4f}" for k in LOG_KEYS)
-                                    + "\n"
-                                )
-                                print(render(live, aggregate, sample_count), end="", flush=True)
+            # Poll feature report at ~50 Hz
+            now = time.monotonic()
+            if now - last_poll >= 0.02:
+                last_poll = now
+
+                try:
+                    deltas = poll_sensor_delta(fd)
+                except OSError:
+                    deltas = None
+
+                current_axes = read_axes_nonblocking(fd, current_axes)
+
+                if deltas is not None:
+                    for i, k in enumerate(SENSOR_KEYS):
+                        live[k] = deltas[i]
+                    for i, ax in enumerate(AXES):
+                        live[ax] = current_axes[i]
+                        aggregate[ax] += current_axes[i]
+
+                    sample_count += 1
+                    log.write(
+                        f"{sample_count}\t"
+                        + "\t".join(f"{live[k]:.4f}" for k in LOG_KEYS)
+                        + "\n"
+                    )
+                    print(render(live, aggregate, sample_count), end="", flush=True)
             else:
-                time.sleep(0.01)
+                time.sleep(0.002)
 
     finally:
         log.close()
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        ser.close()
-        print("\033[H\033[2J\033[?25h", end="")  # clear + restore cursor
+        os.close(fd)
+        termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_settings)
+        print("\033[H\033[2J\033[?25h", end="")
 
 
 if __name__ == "__main__":

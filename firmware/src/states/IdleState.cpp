@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 
+#include "CalibrationStore.h"
 #include "Config.h"
 #include "Controllers.h"
 #include "StateMachine.h"
@@ -27,6 +28,11 @@ void IdleState::runMotionPipeline(float dt, unsigned long now) {
   }
 
   const float* baseline = sensorController.baseline();
+
+  // Expose baseline-subtracted deltas via HID feature report for calibration host.
+  float delta[9];
+  for (int i = 0; i < 9; i++) delta[i] = raw[i] - baseline[i];
+  hidController.setSensorDelta(delta);
 
   float motion[6] = {};
   motionController.compute(raw, baseline, dt, motion);
@@ -66,6 +72,13 @@ void IdleState::update() {
   lastUpdateMs_ = now;
   runMotionPipeline(dt, now);
   handleSleepTransition(now);
+
+  // Apply any calibration matrix received via HID output report.
+  float newMatrix[6][9];
+  if (hidController.takeCalibrationMatrix(newMatrix)) {
+    CalibrationStore::save(newMatrix);
+    motionController.setDecouplingMatrix(newMatrix);
+  }
 }
 
 void IdleState::exit() {}
