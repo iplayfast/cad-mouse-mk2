@@ -24,8 +24,14 @@ void IdleState::runMotionPipeline(float dt, unsigned long now) {
   float raw[9] = {};
   sensorController.readRaw(raw);
 
+  const float* baseline = sensorController.baseline();
+  float delta[9] = {};
+  for (int i = 0; i < 9; i++) {
+    delta[i] = raw[i] - baseline[i];
+  }
+
   float motion[6] = {};
-  motionController.compute(raw, sensorController.baseline(), dt, motion);
+  motionController.compute(raw, baseline, dt, motion);
 
   if (motionController.hasMotionActivity()) {
     lastActivityMs_ = now;
@@ -34,7 +40,7 @@ void IdleState::runMotionPipeline(float dt, unsigned long now) {
   const uint16_t buttonBits = inputController.buttonBits();
   const bool hidReportSent = hidController.sendReports(motion, buttonBits);
   if (telemetryController.enabled()) {
-    telemetryController.publish(motion, buttonBits, hidReportSent);
+    telemetryController.publish(delta, motion, buttonBits, hidReportSent);
   }
 }
 

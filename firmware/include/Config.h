@@ -43,3 +43,5 @@ const unsigned long LED_CALIBRATING_COLOR = 0x0000FF;
 const long IDLE_SLEEP_TIMEOUT_MS = 2 * 60 * 1000;
 
 }  // namespace Config
+
+#include "Calibration.h"

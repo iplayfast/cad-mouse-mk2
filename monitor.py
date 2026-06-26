@@ -27,7 +27,9 @@ LOG_FILE = "mouse_monitor.log"
 
 
 def open_log():
-    return open(LOG_FILE, "w", buffering=1)
+    f = open(LOG_FILE, "w", buffering=1)
+    f.write(LOG_HEADER)
+    return f
 
 
 def reset_log():
@@ -38,7 +40,10 @@ def reset_log():
     return open_log()
 
 AXES = ["X", "Y", "Z", "Rx", "Ry", "Rz"]
-PATTERN = re.compile(r"^>([A-Za-z]+):(-?[\d.]+(?:e[+-]?\d+)?)$")
+SENSOR_KEYS = ["s0x", "s0y", "s0z", "s1x", "s1y", "s1z", "s2x", "s2y", "s2z"]
+LOG_KEYS = SENSOR_KEYS + AXES
+LOG_HEADER = "sample\t" + "\t".join(LOG_KEYS) + "\n"
+PATTERN = re.compile(r"^>([A-Za-z0-9]+):(-?[\d.]+(?:e[+-]?\d+)?)$")
 
 BAR_HALF = 20          # chars on each side of the centre pip
 BAR_COLS = BAR_HALF * 2 + 3  # [ + left + | + right + ]
@@ -79,7 +84,7 @@ def main():
         print(f"Error opening {PORT}: {e}")
         sys.exit(1)
 
-    live = {ax: 0.0 for ax in AXES}
+    live = {k: 0.0 for k in LOG_KEYS}
     aggregate = {ax: 0.0 for ax in AXES}
     sample_count = 0
     log = open_log()
@@ -117,15 +122,16 @@ def main():
                         if key in live:
                             val = float(val_str)
                             live[key] = val
-                            aggregate[key] += val
+                            if key in AXES:
+                                aggregate[key] += val
                             if key == "Rz":
                                 sample_count += 1
                                 log.write(
                                     f"{sample_count}\t"
-                                    + "\t".join(f"{live[ax]:.4f}" for ax in AXES)
+                                    + "\t".join(f"{live[k]:.4f}" for k in LOG_KEYS)
                                     + "\n"
                                 )
-                            print(render(live, aggregate, sample_count), end="", flush=True)
+                                print(render(live, aggregate, sample_count), end="", flush=True)
             else:
                 time.sleep(0.01)
 
