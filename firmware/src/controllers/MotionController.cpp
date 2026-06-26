@@ -95,7 +95,7 @@ void MotionController::compute(const float raw[9], const float* baseline, float 
     }
 
     out[i] = clampf(filt_[i], -Config::AXIS_LIMIT, Config::AXIS_LIMIT);
-    if (out[i] != 0.0) {
+    if (fabs(filt_[i]) >= dead) {
       motionActive_ = true;
     }
   }
